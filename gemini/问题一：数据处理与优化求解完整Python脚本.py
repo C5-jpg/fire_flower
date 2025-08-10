@@ -55,6 +55,15 @@ def preprocess_data(base_path):
     print(f"加载站点特征数据: {demand_features_path}")
     df_demand = pd.read_csv(demand_features_path)
 
+    # --- BUG 修复 ---
+    # 检查并删除 'demand_features.csv' 中可能已存在的计数列，以避免合并时产生列名冲突
+    cols_to_check = ['borrow_count', 'return_count']
+    existing_cols_to_drop = [col for col in cols_to_check if col in df_demand.columns]
+    if existing_cols_to_drop:
+        print(f"发现 'demand_features.csv' 中已存在以下列: {existing_cols_to_drop}。将予以忽略并基于骑行数据重新计算。")
+        df_demand = df_demand.drop(columns=existing_cols_to_drop)
+    # --- 修复结束 ---
+
     # 3. 数据清洗和准备
     print("正在清洗和准备数据...")
     df_trip.dropna(subset=['start_station_id', 'end_station_id'], inplace=True)
@@ -74,6 +83,8 @@ def preprocess_data(base_path):
     # 5. 将借还车次数合并到主站点数据框中
     master_df = pd.merge(df_demand, borrow_counts, on='station_id', how='left')
     master_df = pd.merge(master_df, return_counts, on='station_id', how='left')
+    
+    # 用0填充可能因左连接产生的NaN值
     master_df[['borrow_count', 'return_count']] = master_df[['borrow_count', 'return_count']].fillna(0)
 
     # 6. 计算模型参数
@@ -199,13 +210,22 @@ def solve_optimization_model(base_path, master_df, C_max, weight_cost, result_fi
     # 6. 为加权和方法归一化目标函数
     print("正在计算目标函数的归一化范围...")
     # 为了找到理想点（最小值），分别为每个目标求解
+    
+    # --- BUG 修复 ---
+    # 暂时关闭求解日志，以保持控制台输出整洁
+    model.setParam(COPT.Param.Logging, 0)
+
     model.setObjective(F1_cost, COPT.MINIMIZE)
-    model.solve(logoutput=0) # logoutput=0 禁止在控制台打印求解日志
+    model.solve()
     F1_min = model.objval if model.status in [COPT.OPTIMAL, COPT.FEASIBLE] else 0
 
     model.setObjective(F2_service_loss, COPT.MINIMIZE)
-    model.solve(logoutput=0)
+    model.solve()
     F2_min = model.objval if model.status in [COPT.OPTIMAL, COPT.FEASIBLE] else 0
+    
+    # 为最终求解恢复日志输出
+    model.setParam(COPT.Param.Logging, 1)
+    # --- 修复结束 ---
 
     # 估算天底点（最大值）以进行稳定的归一化
     # F1_max: 假设所有站点都开放(x=1)但容量最小(c=1)
