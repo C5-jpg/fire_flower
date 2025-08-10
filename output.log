@@ -1,4 +1,0 @@
-  File "C:\Users\hk\fire_flower\analyze_bike_data_final.py", line 28
-    \"\"\"根据操作系统设置合适的中文字体\"\"\"
-     ^
-SyntaxError: unexpected character after line continuation character
